@@ -28,6 +28,12 @@ router.post('/resume/parse', handle(async (req) => {
   return OpenAIService.parseResume(resumeText);
 }));
 
+// Called by: publicController, candidateController for real AI resume match against job
+router.post('/resume/evaluate', handle(async (req) => {
+  const { resumeText, resumeBase64, fileName, mimeType, job } = req.body;
+  return OpenAIService.evaluateResumeMatch({ resumeText, resumeBase64, fileName, mimeType, job });
+}));
+
 // Called by: candidateController score check
 router.post('/resume/score', handle(async (req) => {
   const { resumeText, criteria } = req.body;
