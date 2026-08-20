@@ -102,6 +102,11 @@ router.post('/report/generate', handle(async (req) => {
   return OpenAIService.generateReport(topic, data || {});
 }));
 
+router.post('/leave/recommendations', handle(async (req) => {
+  const { leaveHistory } = req.body;
+  return OpenAIService.generateLeaveRecommendations(leaveHistory || []);
+}));
+
 // ─────────────────────────────────────────
 // PERFORMANCE & ONBOARDING
 // ─────────────────────────────────────────
@@ -146,6 +151,12 @@ router.post('/analytics/execute', handle(async (req) => {
 router.post('/payroll/insights', handle(async (req) => {
   const { employeeId, payslipData } = req.body;
   return OpenAIService.generatePayrollInsights(employeeId, payslipData || {});
+}));
+
+// Called by: aiController.aiAttendanceInsights
+router.post('/attendance/insights', handle(async (req) => {
+  const { attendance } = req.body;
+  return OpenAIService.generateAttendanceInsights({ attendance });
 }));
 
 // Called by: copilotController (HR Helpdesk Chatbot / Copilot)

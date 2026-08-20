@@ -452,6 +452,29 @@ ${JSON.stringify(data)}
     return generate(prompt, true);
   }
 
+  static async generateLeaveRecommendations(leaveHistory) {
+    const prompt = `
+You are an enterprise HR scheduling assistant.
+Analyze these active leave requests and team data.
+Return ONLY a valid JSON object matching this schema:
+{
+  "summary": "Detailed summary of staffing coverage and risks during the active period.",
+  "capacityImpact": "e.g., 90% team capacity maintained.",
+  "recommendations": [
+    {
+      "title": "Employee Name - Leave Type",
+      "decision": "Recommended Approval | Review Required | Rejected",
+      "reason": "Clear explanation citing overlap, balance, or sprint deadlines."
+    }
+  ]
+}
+
+Leave Requests Data:
+${JSON.stringify(leaveHistory)}
+    `.trim();
+    return generate(prompt, true);
+  }
+
   static async generatePayrollInsights(employeeId, payslipData) {
     const prompt = `
 You are an HCM payroll assistant.
@@ -505,29 +528,114 @@ ${JSON.stringify(payslipData)}
   }
 
   static async evaluatePerformance(kpis, feedback) {
-    const prompt = `
-You are a performance management expert.
-Evaluate the following employee KPIs and feedback.
-Return ONLY a valid JSON object:
-{
-  "overallRating": "Exceeds Expectations" | "Meets Expectations" | "Needs Improvement",
-  "score": 82,
-  "kpiAnalysis": [
-    { "kpi": "KPI Name", "status": "Achieved" | "Partial" | "Missed", "comment": "..." }
-  ],
-  "strengths": ["..."],
-  "developmentAreas": ["..."],
-  "managerRecommendation": "Promotion Ready" | "Standard Increment" | "PIP Required",
-  "summary": "2-3 sentence evaluation summary"
-}
+    const isTeamMode = feedback === 'Overall Team Feedback';
 
-KPIs:
+    let prompt = '';
+    if (isTeamMode) {
+      prompt = `
+You are a team performance analyzer.
+Evaluate the following team KPIs:
 ${JSON.stringify(kpis || [])}
 
-Feedback:
-${JSON.stringify(feedback || {})}
-    `.trim();
+Return ONLY a valid JSON object matching this schema:
+{
+  "summary": "Detailed synthesis of overall team performance, qualitative assessments & growth recommendations.",
+  "capacityImpact": "e.g., 94% productivity index.",
+  "recommendations": [
+    {
+      "title": "Recommendation Area Title",
+      "decision": "Recommended Action / Phase",
+      "reason": "Clear explanation citing the KPI metrics."
+    }
+  ]
+}
+      `;
+    } else {
+      prompt = `
+You are an HR appraisal copilot.
+Draft a performance review for the employee based on the following details:
+Context: ${JSON.stringify(feedback || {})}
+KPIs: ${JSON.stringify(kpis || [])}
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "rating": 4,
+  "strengths": "Bullet list of key achievements/strengths.",
+  "improvements": "Bullet list of developmental areas/improvements.",
+  "summary": "2-3 sentences evaluating the performance cycle."
+}
+      `;
+    }
     return generate(prompt, true);
+  }
+
+  static async generateAttendanceInsights(attendanceData) {
+    try {
+      const prompt = `
+You are an advanced HCM AI Attendance, Leave & Burnout Intelligence Engine.
+Analyze the following team attendance logs and leave requests data:
+
+Attendance Logs:
+${JSON.stringify(attendanceData?.attendance || [])}
+
+Leave Requests:
+${JSON.stringify(attendanceData?.leaves || [])}
+
+Return ONLY a valid JSON object with EXACTLY this structure:
+{
+  "attendanceSummary": "Precise 2-3 sentence summary covering total logs, punctuality rates, present vs late count, and work location modes.",
+  "leaveSummary": "Precise 2-3 sentence summary covering active leave requests, approved vs pending leaves, primary leave types, and team capacity impact.",
+  "summary": "Combined executive summary highlighting overall attendance health and operational stability.",
+  "capacityImpact": "XX% capacity maintained",
+  "burnoutRisk": "Low" | "Moderate" | "High",
+  "recommendations": [
+    {
+      "title": "Title of recommendation",
+      "decision": "Recommended Action / Decision (e.g. Approved Coverage, Schedule Review Needed, Safe Load)",
+      "reason": "Detailed data-driven explanation based on actual attendance/overtime/leave patterns."
+    }
+  ]
+}
+      `.trim();
+      return await generate(prompt, true);
+    } catch (err) {
+      console.error("[OpenAIService.generateAttendanceInsights Error]", err.message);
+      
+      const logs = attendanceData?.attendance || [];
+      const leaves = attendanceData?.leaves || [];
+      
+      const totalLogs = logs.length || 1;
+      const lateCount = logs.filter(l => (l.status || '').toLowerCase() === 'late').length;
+      const presentCount = logs.filter(l => (l.status || '').toLowerCase() === 'present').length || Math.max(0, totalLogs - lateCount);
+      const punctualityPct = Math.round((presentCount / totalLogs) * 100);
+
+      const totalLeaves = leaves.length;
+      const pendingLeaves = leaves.filter(l => (l.status || '').toUpperCase() === 'PENDING' || l.status === 'Pending').length;
+      const approvedLeaves = leaves.filter(l => (l.status || '').toUpperCase() === 'APPROVED' || l.status === 'Approved').length;
+      const capacityPct = Math.max(60, Math.min(100, Math.round(100 - (approvedLeaves * 3.5))));
+
+      const burnoutRisk = (lateCount > 3 || pendingLeaves > 3) ? "Moderate" : lateCount > 5 ? "High" : "Low";
+
+      return {
+        attendanceSummary: `Team attendance is tracking at ${punctualityPct}% punctuality rate across ${totalLogs} logged session(s), with ${presentCount} present and ${lateCount} late check-in(s).`,
+        leaveSummary: `A total of ${totalLeaves} leave request(s) recorded (${approvedLeaves} approved, ${pendingLeaves} pending review). Operational workforce capacity remains stable.`,
+        summary: `Team operations are running smoothly with ${punctualityPct}% attendance timeliness and ${capacityPct}% active workforce capacity maintained.`,
+        capacityImpact: `${capacityPct}% capacity maintained`,
+        burnoutRisk: burnoutRisk,
+        recommendations: [
+          {
+            title: "Punctuality & Schedule Alignment",
+            decision: lateCount > 2 ? "Review Shift Timings" : "Optimal Alignment",
+            reason: lateCount > 2 ? `${lateCount} team members had late check-ins. Review shift start times or offer flexible check-in windows.` : "Check-in patterns show consistent team punctuality and schedule adherence."
+          },
+          {
+            title: "Leave Approval & Team Coverage",
+            decision: pendingLeaves > 0 ? "Pending Review Action" : "Coverage Balanced",
+            reason: pendingLeaves > 0 ? `${pendingLeaves} leave request(s) awaiting manager review. Prompt approval ensures seamless team scheduling.` : "All current leave requests are cleared and team coverage is sufficient."
+          }
+        ]
+      };
+    }
   }
 
   static async generateOnboarding(role, department) {
